@@ -621,7 +621,7 @@ function renderWatchedButton(item) {
   const dates = watch.filter(w => w.item.key === item.key).map(w => w.date).sort();
   const last = dates[dates.length - 1];
   $('detail-watched').textContent = last
-    ? `${verb[0].toUpperCase() + verb.slice(1)} ${prettyDate(last)} · log again`
+    ? `${verb[0].toUpperCase() + verb.slice(1)} ${prettyDate(last)}`
     : `Mark as ${verb}`;
   $('detail-watched').classList.toggle('done', Boolean(last));
 }
