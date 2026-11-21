@@ -27,6 +27,10 @@ const sb = CFG.SUPABASE_URL && CFG.SUPABASE_ANON_KEY && window.supabase
   ? window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY)
   : null;
 
+/* PREVIEW MODE: skips sign-in and Supabase so you can work on the look of the app.
+   Nothing is saved. Turn it on with PREVIEW: true in config.js, or add ?preview to the address. */
+const PREVIEW = Boolean(CFG.PREVIEW) || new URLSearchParams(location.search).has('preview');
+
 const IMG = 'https://image.tmdb.org/t/p/w500';
 const KIND_LABEL = { movie: 'Movie', series: 'Series', anime: 'Anime', game: 'Game' };
 
@@ -71,6 +75,24 @@ const fromRow = r => ({
   key: `${r.media_type}:${r.item_id}`, id: r.item_id, media: r.media_type, kind: r.kind, title: r.title,
   year: r.year || '', rating: r.rating ? Number(r.rating) : null, poster: r.poster || '', overview: '',
 });
+
+/* A few made-up titles so every screen has something to show in preview mode. */
+const SAMPLE = [
+  ['Interstellar', 'movie', 2014, 8.7, 'A team of explorers travels through a wormhole to save humanity.'],
+  ['The Dark Knight', 'movie', 2008, 9.0, 'Batman faces the Joker, who pushes Gotham toward chaos.'],
+  ['Dune', 'movie', 2021, 8.0, 'Paul Atreides travels to the desert planet Arrakis.'],
+  ['Breaking Bad', 'series', 2008, 9.5, 'A chemistry teacher turns to making methamphetamine.'],
+  ['Dark', 'series', 2017, 8.7, 'A missing child exposes a web of time travel and family secrets.'],
+  ['Attack on Titan', 'anime', 2013, 9.1, 'Humanity lives behind walls to escape giant Titans.'],
+  ['Death Note', 'anime', 2006, 9.0, 'A student finds a notebook that kills anyone named in it.'],
+  ['Jujutsu Kaisen', 'anime', 2020, 8.6, 'Yuji Itadori joins a school of sorcerers.'],
+  ['Red Dead Redemption 2', 'game', 2018, 9.7, 'An outlaw gang runs from the law in 1899.'],
+  ['Ghost of Tsushima', 'game', 2020, 9.2, 'A samurai defends Tsushima island from invasion.'],
+].map(([title, kind, year, rating, overview], i) => remember({
+  key: `${kind === 'movie' ? 'movie' : kind === 'game' ? 'game' : 'tv'}:${900 + i}`, id: 900 + i,
+  media: kind === 'movie' ? 'movie' : kind === 'game' ? 'game' : 'tv', kind, title, year, rating, poster: '', overview,
+}));
+const useSample = PREVIEW && !CFG.TMDB_TOKEN;      // no TMDB token in preview → use the sample titles
 
 /* ==========================================================================
    2. TITLES  (TMDB + RAWG)
@@ -117,6 +139,7 @@ function fromRawg(g) {
 
 /* Extra detail for the detail page: description plus small pills. */
 async function loadInfo(item) {
+  if (useSample) return { overview: item.overview, extra: [KIND_LABEL[item.kind]] };
   if (item.media === 'game') {
     const g = await rawg('/games/' + item.id);
     const platforms = (g.platforms || []).slice(0, 3).map(p => p.platform.name).join(' · ');
@@ -166,6 +189,7 @@ let watch = [];
 const isSaved = key => lists.some(list => list.items.some(item => item.key === key));
 
 async function loadLists() {
+  if (PREVIEW) { lists = [{ id: 'preview-favorites', name: 'Favorites', items: SAMPLE.slice(0, 6) }]; return; }
   const columns = 'id,name,created_at,list_items(item_id,media_type,kind,title,poster,year,rating,added_at)';
   let { data, error } = await sb.from('lists').select(columns).order('created_at');
   if (error) throw error;
@@ -181,22 +205,43 @@ async function loadLists() {
 }
 
 async function loadWatch() {
+  if (PREVIEW) {
+    const day = d => dateKey(now.getFullYear(), now.getMonth(), d);
+    watch = [[2, 0], [5, 3], [5, 5], [9, 4], [14, 8], [now.getDate(), 1]].map(([d, i]) => ({ id: 'p' + d + '-' + i, date: day(d), item: SAMPLE[i] }));
+    return;
+  }
   const { data, error } = await sb.from('watch_log').select('*').order('watched_on');
   if (error) throw error;
-  watch = data.map(r => ({ date: r.watched_on, item: remember(fromRow(r)) }));
+  watch = data.map(r => ({ id: r.id, date: r.watched_on, item: remember(fromRow(r)) }));
 }
 
 async function createList(name, item) {
-  const { data, error } = await sb.from('lists').insert({ name }).select('id,name').single();
-  if (error) return toast('Could not create the list: ' + error.message);
-  const list = { id: data.id, name: data.name, items: [] };
+  let id = 'preview-' + Date.now();
+  if (!PREVIEW) {
+    const { data, error } = await sb.from('lists').insert({ name }).select('id,name').single();
+    if (error) return toast('Could not create the list: ' + error.message);
+    id = data.id;
+  }
+  const list = { id, name, items: [] };
   lists.push(list);
   if (item) await toggleInList(list, item); else refresh();
 }
 
+async function deleteList(id) {
+  const list = lists.find(l => l.id === id);
+  if (!list || lists.length < 2) return;                       // always keep at least one list
+  if (!confirm(`Delete "${list.name}" and its ${list.items.length} saved titles?`)) return;
+  const { error } = PREVIEW ? {} : await sb.from('lists').delete().eq('id', id);   // its items are deleted with it
+  if (error) return toast('Could not delete the list: ' + error.message);
+  lists = lists.filter(l => l.id !== id);
+  if (openListId === id) openListId = null;
+  refresh();
+  toast('List deleted');
+}
+
 async function toggleInList(list, item) {
   const has = list.items.some(i => i.key === item.key);
-  const { error } = has
+  const { error } = PREVIEW ? {} : has
     ? await sb.from('list_items').delete().match({ list_id: list.id, item_id: item.id, media_type: item.media })
     : await sb.from('list_items').insert({ list_id: list.id, ...snapshot(item) });
   if (error) return toast('Could not save: ' + error.message);
@@ -205,11 +250,21 @@ async function toggleInList(list, item) {
 }
 
 async function logWatch(item) {
-  const { error } = await sb.from('watch_log').insert({ ...snapshot(item), watched_on: todayKey });
+  const { data, error } = PREVIEW
+    ? { data: { id: 'p' + Date.now() } }
+    : await sb.from('watch_log').insert({ ...snapshot(item), watched_on: todayKey }).select('id').single();
   if (error) return toast('Could not log it: ' + error.message);
-  watch.push({ date: todayKey, item });
+  watch.push({ id: data.id, date: todayKey, item });
   renderCalendar();
   toast('Added to today in Stats');
+}
+
+async function removeWatch(id) {
+  const { error } = PREVIEW ? {} : await sb.from('watch_log').delete().eq('id', id);
+  if (error) return toast('Could not remove it: ' + error.message);
+  watch = watch.filter(w => w.id !== id);
+  renderCalendar();
+  toast('Removed from this day');
 }
 
 /* ==========================================================================
@@ -259,12 +314,16 @@ function tileEl(item) {
 
 const RAILS = {
   'rail-trending': { path: '/trending/all/week', media: null },
-  'rail-new': { path: '/movie/now_playing', media: 'movie' },
-  'rail-anime': { path: '/discover/tv?with_genres=16&with_original_language=ja&sort_by=popularity.desc', media: 'tv' },
-  'rail-top': { path: '/tv/top_rated', media: 'tv' },
+  'rail-new':      { path: '/movie/now_playing', media: 'movie' },
+  'rail-anime':    { path: '/discover/tv?with_genres=16&with_original_language=ja&sort_by=popularity.desc', media: 'tv' },
+  'rail-top':      { path: '/tv/top_rated', media: 'tv' },
 };
 
 async function loadHome() {
+  if (useSample) {                                   // preview without a TMDB token
+    Object.keys(RAILS).forEach((id, n) => $(id).replaceChildren(...[...SAMPLE.slice(n), ...SAMPLE.slice(0, n)].map(cardEl)));
+    return;
+  }
   await Promise.all(Object.entries(RAILS).map(async ([id, { path, media }]) => {
     const rail = $(id);
     rail.innerHTML = '<div class="card"><div class="skeleton"></div></div>'.repeat(3);
@@ -298,12 +357,17 @@ async function runSearch(text) {
   $('search-status').textContent = 'Searching…';
   $('search-status').hidden = false;
   try {
-    const [movies, games] = await Promise.all([
-      tmdb('/search/multi?query=' + encodeURIComponent(text)),
-      CFG.RAWG_KEY ? rawg('/games?page_size=8&search=' + encodeURIComponent(text)) : { results: [] },
-    ]);
-    if (run !== searchRun) return;
-    const items = [...movies.results.map(r => fromTmdb(r)).filter(Boolean), ...games.results.map(fromRawg)];
+    let items;
+    if (useSample) {
+      items = SAMPLE.filter(i => i.title.toLowerCase().includes(text.toLowerCase()));
+    } else {
+      const [movies, games] = await Promise.all([
+        tmdb('/search/multi?query=' + encodeURIComponent(text)),
+        CFG.RAWG_KEY ? rawg('/games?page_size=8&search=' + encodeURIComponent(text)) : { results: [] },
+      ]);
+      if (run !== searchRun) return;
+      items = [...movies.results.map(r => fromTmdb(r)).filter(Boolean), ...games.results.map(fromRawg)];
+    }
     $('search-status').hidden = true;
     $('search-heading').hidden = items.length === 0;
     $('search-heading').textContent = `${items.length} ${items.length === 1 ? 'result' : 'results'} for “${text}”`;
@@ -388,7 +452,15 @@ function renderCalendar() {
 
   // Under the calendar: what was watched on the selected day.
   const picked = selected ? watch.filter(w => w.date === selected) : [];
-  $('day-list').replaceChildren(...picked.map(w => rowEl(w.item, { save: false })));
+  $('day-list').replaceChildren(...picked.map(w => {
+    const row = rowEl(w.item, { save: false });
+    const remove = document.createElement('button');          // the round × button on the right
+    remove.className = 'plus plus--row saved';
+    remove.dataset.unwatch = w.id;
+    remove.setAttribute('aria-label', 'Remove ' + w.item.title + ' from this day');
+    row.append(remove);
+    return row;
+  }));
   $('day-heading').hidden = !selected;
   if (selected) {
     $('day-heading').textContent = new Date(selected + 'T00:00:00')
@@ -406,6 +478,10 @@ function changeMonth(step) {
   renderCalendar();
 }
 
+$('day-list').addEventListener('click', event => {
+  const remove = event.target.closest('[data-unwatch]');
+  if (remove) removeWatch(remove.dataset.unwatch);
+});
 $('cal-prev').addEventListener('click', () => changeMonth(-1));
 $('cal-next').addEventListener('click', () => changeMonth(1));
 $('cal-grid').addEventListener('click', event => {
@@ -424,6 +500,10 @@ function renderLists() {
     const box = $('tpl-vault').content.firstElementChild.cloneNode(true);
     box.querySelector('.name').textContent = list.name;
     box.querySelector('.count').textContent = list.items.length + ' saved';
+    const del = box.querySelector('.vault-delete');
+    del.hidden = lists.length < 2;                                // the last list can't be deleted
+    del.dataset.deleteList = list.id;
+    del.setAttribute('aria-label', 'Delete list ' + list.name);
 
     // Up to 4 titles: show them all. More than 4: three posters, then a "+N" box.
     const many = list.items.length > 4;
@@ -451,6 +531,8 @@ function renderListView() {
 }
 
 $('lists').addEventListener('click', event => {
+  const del = event.target.closest('[data-delete-list]');
+  if (del) { deleteList(del.dataset.deleteList); return; }
   const more = event.target.closest('[data-open-list]');
   if (!more) return;
   openListId = more.dataset.openList;
@@ -588,7 +670,10 @@ function showSignIn() {
 
 $('rawg-credit').hidden = !CFG.RAWG_KEY;
 
-if (!sb || !CFG.TMDB_TOKEN) {
+if (PREVIEW) {
+  $('sign-out').hidden = true;
+  start({ id: 'preview' }).then(() => toast('Preview mode: sign-in is off and nothing is saved'));
+} else if (!sb || !CFG.TMDB_TOKEN) {
   showSignIn();
   authMessage('Setup needed: add your TMDB and Supabase keys in config.js, then reload.');
 } else {

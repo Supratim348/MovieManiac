@@ -6,6 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>NEXUS</title>
   <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="icon" type="image/png" href="assets/film-roll.png">
   <link rel="stylesheet" href="style.css">
 </head>
 
@@ -30,7 +31,8 @@
 
     <!-- ============ HOME ============ -->
     <section class="screen" id="screen-home">
-      <header class="screen-header">
+      <header class="screen-header brand">
+        <img class="brand-mark" src="assets/movie.png" alt="">
         <h1 class="logo">NEXUS</h1>
       </header>
       <p class="welcome">Your universe, your collection.</p>
@@ -63,8 +65,9 @@
 
     <!-- ============ SEARCH ============ -->
     <section class="screen" id="screen-search">
-      <header class="screen-header">
-        <h1 class="logo">Search</h1>
+      <header class="screen-header brand">
+        <img class="brand-mark" src="assets/search.png" alt="">
+        <h1 class="logo">SEARCH</h1>
       </header>
 
       <form class="search-bar" id="search-form" role="search">
@@ -103,8 +106,9 @@
 
     <!-- ============ STATS (calendar) ============ -->
     <section class="screen" id="screen-stats">
-      <header class="screen-header">
-        <h1 class="logo">Stats</h1>
+      <header class="screen-header brand">
+        <img class="brand-mark" src="assets/calendar-check-symbol.png" alt="">
+        <h1 class="logo">STATS</h1>
       </header>
 
       <div class="cal-head">
@@ -136,8 +140,9 @@
 
     <!-- ============ MY LIST ============ -->
     <section class="screen" id="screen-list">
-      <header class="screen-header screen-header--split">
-        <h1 class="logo">My List</h1>
+      <header class="screen-header brand">
+        <img class="brand-mark" src="assets/task.png" alt="">
+        <h1 class="logo">WATCHLIST</h1>
         <button class="icon-btn" id="new-list-btn" aria-label="Create a new list">
           <svg class="icon" viewBox="0 0 24 24">
             <path d="M12 5v14M5 12h14" />
@@ -178,7 +183,7 @@
       <div class="pills" id="detail-extra"></div>
       <p id="detail-synopsis"></p>
       <button class="btn" id="detail-save" data-save=""><span class="when-off">Add to My List</span><span
-          class="when-on">Saved · manage lists</span></button>
+          class="when-on">Unsave</span></button>
       <button class="btn ghost" id="detail-watched" type="button"></button>
     </div>
   </article>
@@ -262,6 +267,11 @@
     <div class="vault">
       <div class="vault-head">
         <span class="vault-title"><span class="name"></span> <small class="count"></small></span>
+        <button class="vault-delete" aria-label="Delete list">
+          <svg class="icon" viewBox="0 0 24 24">
+            <path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" />
+          </svg>
+        </button>
       </div>
       <div class="vault-grid"></div>
       <p class="vault-empty">This list is empty. Use + on a title to add it here.</p>

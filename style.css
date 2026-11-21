@@ -36,6 +36,20 @@ body {
    font: 14px/1.4 Sora, system-ui, sans-serif;
 }
 
+.brand {
+   display: flex;
+   align-items: center;
+   gap: 10px;
+}
+
+.brand-mark {
+   height: 28px;
+}
+
+.brand .icon-btn {
+  margin-left: auto;
+}
+
 a {
    color: inherit;
    text-decoration: none;
@@ -106,7 +120,7 @@ h3 {
 
 /* 4. Headers --------------------------------------------------------------- */
 .screen-header {
-   padding: 16px 16px 4px;
+   padding: 16px 16px 5px;
 }
 
 .logo {
@@ -227,6 +241,7 @@ h3 {
    overflow-x: auto;
    scrollbar-width: none;
    scroll-snap-type: x proximity;
+   scroll-padding-left: 16px;
 }
 
 .rail::-webkit-scrollbar {
@@ -487,12 +502,7 @@ h3 {
    Each list is a .vault box built by app.js from <template id="tpl-vault">.
    The box shows one row of up to 4 boxes. With more than 4 titles it shows
    3 posters plus a "+N" box; tapping that opens the full-screen list (section 9b). */
-.screen-header--split {
-   display: flex;
-   justify-content: space-between;
-   align-items: center;
-   padding-right: 16px;
-}
+
 
 .vault {
    margin: 14px 16px;
@@ -501,12 +511,6 @@ h3 {
    border: 1px solid var(--line);
    border-radius: 16px;
    overflow: hidden;
-}
-
-.vault-head {
-   margin: 0 14px;
-   padding: 14px 0 10px;
-   border-bottom: 2px solid var(--line);
 }
 
 .vault-title {
@@ -581,6 +585,22 @@ h3 {
 
 .vault:not(:has(.tile)) .vault-grid {
    display: none;
+}
+
+.vault-head {
+   display: flex;
+   justify-content: space-between;
+   align-items: center;
+   margin: 0 14px;
+   padding: 14px 0 10px;
+   border-bottom: 2px solid var(--line);
+}
+
+.vault-delete {
+  display: grid;
+  place-items: center;
+  padding: 4px;
+  color: var(--muted);
 }
 
 /* 9b. Full-screen list (the whole list, no container) ----------------------- */
