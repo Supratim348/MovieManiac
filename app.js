@@ -259,9 +259,9 @@ function tileEl(item) {
 
 const RAILS = {
   'rail-trending': { path: '/trending/all/week', media: null },
-  'rail-new':      { path: '/movie/now_playing', media: 'movie' },
-  'rail-anime':    { path: '/discover/tv?with_genres=16&with_original_language=ja&sort_by=popularity.desc', media: 'tv' },
-  'rail-top':      { path: '/tv/top_rated', media: 'tv' },
+  'rail-new': { path: '/movie/now_playing', media: 'movie' },
+  'rail-anime': { path: '/discover/tv?with_genres=16&with_original_language=ja&sort_by=popularity.desc', media: 'tv' },
+  'rail-top': { path: '/tv/top_rated', media: 'tv' },
 };
 
 async function loadHome() {
