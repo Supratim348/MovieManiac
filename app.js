@@ -220,7 +220,7 @@ async function createList(name, item) {
   let id = 'preview-' + Date.now();
   if (!PREVIEW) {
     const { data, error } = await sb.from('lists').insert({ name }).select('id,name').single();
-    if (error) return toast('Could not create the list: ' + error.message);
+    if (error) return toast('Could not create the list');
     id = data.id;
   }
   const list = { id, name, items: [] };
@@ -251,7 +251,7 @@ async function toggleInList(list, item) {
 }
 
 async function logWatch(item, date = todayKey) {
-  if (watch.some(w => w.item.key === item.key && w.date === date)) return toast('Already logged for that day');
+  if (watch.some(w => w.item.key === item.key && w.date === date)) return toast('Already Logged');
   const { data, error } = PREVIEW
     ? { data: { id: 'p' + Date.now() } }
     : await sb.from('watch_log').insert({ ...snapshot(item), watched_on: date }).select('id').single();
@@ -263,7 +263,7 @@ async function logWatch(item, date = todayKey) {
   calendar.selected = date;
   renderCalendar();
   renderWatchedButton(item);
-  toast('Added to Stats: ' + prettyDate(date));
+  toast('Added');
 }
 
 async function removeWatch(id) {
@@ -271,7 +271,7 @@ async function removeWatch(id) {
   if (error) return toast('Could not remove it: ' + error.message);
   watch = watch.filter(w => w.id !== id);
   renderCalendar();
-  toast('Removed from this day');
+  toast('Removed');
 }
 
 /* ==========================================================================
