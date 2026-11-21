@@ -47,7 +47,7 @@ body {
 }
 
 .brand .icon-btn {
-  margin-left: auto;
+   margin-left: auto;
 }
 
 a {
@@ -597,10 +597,10 @@ h3 {
 }
 
 .vault-delete {
-  display: grid;
-  place-items: center;
-  padding: 4px;
-  color: var(--muted);
+   display: grid;
+   place-items: center;
+   padding: 4px;
+   color: var(--muted);
 }
 
 /* 9b. Full-screen list (the whole list, no container) ----------------------- */
@@ -1024,4 +1024,12 @@ h3 {
    to {
       background-position: -200% 0;
    }
+}
+
+* {
+   scrollbar-width: none;
+}
+
+*::-webkit-scrollbar {
+   display: none;
 }

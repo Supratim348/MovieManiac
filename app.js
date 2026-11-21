@@ -51,6 +51,7 @@ function toast(message) {
 
 const dateKey = (y, m, d) => `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
 const now = new Date();
+const prettyDate = key => new Date(key + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 const todayKey = dateKey(now.getFullYear(), now.getMonth(), now.getDate());
 
 /* Posters: the real image, with a coloured gradient + title behind it.
@@ -249,14 +250,20 @@ async function toggleInList(list, item) {
   refresh();
 }
 
-async function logWatch(item) {
+async function logWatch(item, date = todayKey) {
+  if (watch.some(w => w.item.key === item.key && w.date === date)) return toast('Already logged for that day');
   const { data, error } = PREVIEW
     ? { data: { id: 'p' + Date.now() } }
-    : await sb.from('watch_log').insert({ ...snapshot(item), watched_on: todayKey }).select('id').single();
+    : await sb.from('watch_log').insert({ ...snapshot(item), watched_on: date }).select('id').single();
   if (error) return toast('Could not log it: ' + error.message);
-  watch.push({ id: data.id, date: todayKey, item });
+  watch.push({ id: data.id, date, item });
+  const [y, m] = date.split('-').map(Number);                  // show that month in Stats, day selected
+  calendar.year = y;
+  calendar.month = m - 1;
+  calendar.selected = date;
   renderCalendar();
-  toast('Added to today in Stats');
+  renderWatchedButton(item);
+  toast('Added to Stats: ' + prettyDate(date));
 }
 
 async function removeWatch(id) {
@@ -605,8 +612,30 @@ function renderDetail(item, info) {
   $('detail-synopsis').textContent = (info && info.overview) || item.overview || (info ? 'No description available.' : 'Loading…');
   $('detail-save').dataset.save = item.key;
   $('detail-save').classList.toggle('saved', isSaved(item.key));
-  $('detail-watched').textContent = item.kind === 'game' ? 'I played this today' : 'I watched this today';
+  renderWatchedButton(item);
 }
+
+/* "Mark as watched" button: shows the latest date once the title has been logged. */
+function renderWatchedButton(item) {
+  const verb = item.kind === 'game' ? 'played' : 'watched';
+  const dates = watch.filter(w => w.item.key === item.key).map(w => w.date).sort();
+  const last = dates[dates.length - 1];
+  $('detail-watched').textContent = last
+    ? `${verb[0].toUpperCase() + verb.slice(1)} ${prettyDate(last)} · log again`
+    : `Mark as ${verb}`;
+  $('detail-watched').classList.toggle('done', Boolean(last));
+}
+
+function openWatchedSheet() {
+  if (!detailItem) return;
+  const game = detailItem.kind === 'game';
+  $('watched-title').textContent = game ? 'When did you play it?' : 'When did you watch it?';
+  $('watched-sub').textContent = detailItem.title;
+  $('watched-date').max = todayKey;                            // no dates in the future
+  $('watched-date').value = todayKey;
+  $('watched-sheet').hidden = false;
+}
+function closeWatchedSheet() { $('watched-sheet').hidden = true; }
 
 async function openDetail(item) {
   detailItem = item;
@@ -622,7 +651,16 @@ async function openDetail(item) {
 }
 
 $('detail-back').addEventListener('click', () => { $('detail').hidden = true; detailItem = null; });
-$('detail-watched').addEventListener('click', () => { if (detailItem) logWatch(detailItem); });
+$('detail-watched').addEventListener('click', openWatchedSheet);
+$('watched-cancel').addEventListener('click', closeWatchedSheet);
+$('watched-sheet').addEventListener('click', event => { if (event.target === event.currentTarget) closeWatchedSheet(); });
+$('watched-form').addEventListener('submit', event => {
+  event.preventDefault();
+  const date = $('watched-date').value;
+  if (!date || date > todayKey) return toast('Pick a date up to today');
+  closeWatchedSheet();
+  if (detailItem) logWatch(detailItem, date);
+});
 
 /* ==========================================================================
    6. EVENTS

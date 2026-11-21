@@ -181,10 +181,13 @@
       <div class="pills" id="detail-pills"></div>
       <h2 id="detail-title"></h2>
       <div class="pills" id="detail-extra"></div>
+      <h3 class="detail-label">Overview</h3>
       <p id="detail-synopsis"></p>
-      <button class="btn" id="detail-save" data-save=""><span class="when-off">Add to My List</span><span
-          class="when-on">Unsave</span></button>
-      <button class="btn ghost" id="detail-watched" type="button"></button>
+      <div class="detail-actions">
+        <button class="btn" id="detail-save" data-save=""><span class="when-off">Add to My List</span><span
+            class="when-on">Unsave</span></button>
+        <button class="btn ghost" id="detail-watched" type="button"></button>
+      </div>
     </div>
   </article>
 
@@ -211,6 +214,16 @@
       <button class="sheet-option" id="save-sheet-new" type="button">+ New list</button>
       <button class="btn" id="save-sheet-done" type="button">Done</button>
     </div>
+  </div>
+
+  <div class="sheet-backdrop" id="watched-sheet" hidden>
+    <form class="sheet" id="watched-form">
+      <h4 id="watched-title">When did you watch it?</h4>
+      <p class="muted" id="watched-sub"></p>
+      <input id="watched-date" type="date" required>
+      <button class="btn" type="submit">Save</button>
+      <button class="sheet-cancel" id="watched-cancel" type="button">Cancel</button>
+    </form>
   </div>
 
   <!-- "New list" form -->
