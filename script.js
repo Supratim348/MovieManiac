@@ -252,11 +252,11 @@ $('history-clear').addEventListener('click', () => { searchHistory = []; writeJS
 
 const WATCH_LOG = [
   { date: '2026-11-02', id: 'interstellar' }, { date: '2026-11-05', id: 'breakingbad' }, { date: '2026-11-05', id: 'aot' },
-  { date: '2026-11-09', id: 'dune' },         { date: '2026-11-12', id: 'jjk' },         { date: '2026-11-14', id: 'ghost' },
-  { date: '2026-11-17', id: 'dark' },         { date: '2026-11-19', id: 'deathnote' },  { date: '2026-11-20', id: 'darkknight' },
+  { date: '2026-11-09', id: 'dune' }, { date: '2026-11-12', id: 'jjk' }, { date: '2026-11-14', id: 'ghost' },
+  { date: '2026-11-17', id: 'dark' }, { date: '2026-11-19', id: 'deathnote' }, { date: '2026-11-20', id: 'darkknight' },
   { date: '2026-11-21', id: 'rdr2' },
-  { date: '2026-10-03', id: 'inception' },    { date: '2026-10-08', id: 'stranger' },    { date: '2026-10-15', id: 'boys' },
-  { date: '2026-10-22', id: 'kimetsu' },      { date: '2026-10-28', id: 'cp77' },
+  { date: '2026-10-03', id: 'inception' }, { date: '2026-10-08', id: 'stranger' }, { date: '2026-10-15', id: 'boys' },
+  { date: '2026-10-22', id: 'kimetsu' }, { date: '2026-10-28', id: 'cp77' },
 ];
 
 const now = new Date();
