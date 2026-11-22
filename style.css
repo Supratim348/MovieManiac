@@ -265,6 +265,150 @@ h3 {
    white-space: nowrap;
 }
 
+/* Home: spotlight banners, category chips, ranked cards */
+.spot {
+   margin: 14px 0 0;
+}
+
+.spot-track {
+   display: flex;
+   overflow-x: auto;
+   scroll-snap-type: x mandatory;
+   gap: 10px;
+   padding: 0 16px;
+   scroll-padding: 0 16px;
+}
+
+.spot-slide {
+   position: relative;
+   flex: none;
+   width: 100%;
+   height: 218px;
+   overflow: hidden;
+   scroll-snap-align: center;
+   background: linear-gradient(160deg, hsl(var(--a) 70% 38%), hsl(var(--b) 60% 10%));
+   border: 1px solid var(--line);
+   border-radius: 20px;
+   box-shadow: 0 14px 28px -14px #000;
+}
+
+.spot-slide img {
+   position: absolute;
+   inset: 0;
+   width: 100%;
+   height: 100%;
+   object-fit: cover;
+}
+
+.spot-slide::after {
+   content: "";
+   position: absolute;
+   inset: 0;
+   background: linear-gradient(180deg, #10111400 25%, #101114f2 100%);
+}
+
+.spot-info {
+   position: absolute;
+   left: 16px;
+   right: 16px;
+   bottom: 14px;
+   z-index: 2;
+   pointer-events: none;
+}
+
+.spot-info .tag {
+   position: static;
+   display: inline-block;
+   margin-bottom: 6px;
+}
+
+.spot-info h2 {
+   font-size: 21px;
+   line-height: 1.15;
+   text-shadow: 0 2px 12px #000;
+   display: -webkit-box;
+   -webkit-box-orient: vertical;
+   -webkit-line-clamp: 2;
+   line-clamp: 2;
+   overflow: hidden;
+}
+
+.spot-info p {
+   margin-top: 3px;
+   font-size: 12px;
+   color: #d4d5df;
+}
+
+.spot-dots {
+   display: flex;
+   justify-content: center;
+   gap: 6px;
+   margin-top: 10px;
+}
+
+.spot-dots span {
+   width: 6px;
+   height: 6px;
+   background: var(--line);
+   border-radius: 99px;
+   transition: width .25s, background-color .25s;
+}
+
+.spot-dots span.on {
+   width: 20px;
+   background: var(--violet);
+}
+
+.chips {
+   display: flex;
+   gap: 8px;
+   padding: 16px 16px 2px;
+   overflow-x: auto;
+}
+
+.chip {
+   flex: none;
+   padding: 8px 18px;
+   font-size: 12.5px;
+   color: var(--muted);
+   background: var(--surface);
+   border: 1px solid var(--line);
+   border-radius: 99px;
+   transition: background-color .2s, color .2s;
+}
+
+.chip.on {
+   color: #fff;
+   background: var(--violet);
+   border-color: var(--violet);
+   box-shadow: 0 6px 18px -8px var(--violet);
+}
+
+.card.ranked {
+   width: 172px;
+   padding-left: 44px;
+}
+
+.rank {
+   position: absolute;
+   left: 0;
+   top: 0;
+   height: 192px;
+   display: flex;
+   align-items: flex-end;
+   font-size: 84px;
+   font-style: normal;
+   font-weight: 700;
+   line-height: .78;
+   letter-spacing: -.09em;
+   color: #101114;
+   -webkit-text-stroke: 2px var(--lavender);
+}
+
+.card.ranked .art {
+   z-index: 1;
+}
+
 /* 7. Search ---------------------------------------------------------------- */
 .search-bar {
    display: flex;
@@ -292,6 +436,39 @@ h3 {
 
 .search-bar input::-webkit-search-cancel-button {
    display: none;
+}
+
+/* Category picker under the search bar */
+.kinds {
+   display: grid;
+   grid-template-columns: repeat(4, 1fr);
+   gap: 8px;
+   margin: 14px 16px 0;
+}
+
+.kind {
+   display: flex;
+   flex-direction: column;
+   align-items: center;
+   gap: 6px;
+   padding: 12px 4px 10px;
+   font-size: 12px;
+   color: var(--muted);
+   background: var(--surface);
+   border: 1px solid var(--line);
+   border-radius: 14px;
+   transition: background-color .2s, color .2s, border-color .2s, box-shadow .2s;
+}
+
+.kind.on {
+   color: #fff;
+   border-color: var(--violet);
+   background: linear-gradient(160deg, #8b5cf650, #6d3fd91f);
+   box-shadow: 0 6px 18px -8px var(--violet);
+}
+
+.kind.on .icon {
+   color: var(--lavender);
 }
 
 .row {
@@ -743,7 +920,9 @@ h3 {
 }
 
 /* 10. Detail screens -------------------------------------------------------
-   Hidden until app.js removes the [hidden] attribute. */
+   Hidden until script.js removes the [hidden] attribute.
+   Layout: wide backdrop on top, poster + title overlapping it, then actions,
+   overview, facts and the Cast / Screenshots / More like this rails. */
 .detail-screen {
    position: fixed;
    top: 0;
@@ -754,29 +933,233 @@ h3 {
    transform: translateX(-50%);
    overflow-y: auto;
    background: var(--bg);
-   padding-bottom: 40px;
+   padding-bottom: 48px;
 }
 
-.hero {
-   aspect-ratio: auto;
-   height: 430px;
-   border: 0;
-   border-radius: 0;
-   box-shadow: none;
+.d-backdrop {
+   position: relative;
+   height: 270px;
+   overflow: hidden;
+   background: linear-gradient(160deg, hsl(var(--a) 70% 38%), hsl(var(--b) 60% 10%));
 }
 
-.hero::after {
+.d-backdrop img {
+   width: 100%;
+   height: 100%;
+   object-fit: cover;
+}
+
+.d-backdrop.blur img {
+   transform: scale(1.3);
+   filter: blur(22px) brightness(.8);
+}
+
+.d-backdrop::after {
    content: "";
    position: absolute;
    inset: 0;
-   z-index: 2;
-   background: linear-gradient(180deg, #10111400 35%, var(--bg));
+   background: linear-gradient(180deg, #10111466 0%, #10111400 35%, var(--bg) 100%);
 }
 
-.hero b {
-   font-size: 26px;
-   padding: 20px 16px 90px;
-   background: none;
+.d-main {
+   position: relative;
+   z-index: 3;
+   margin: -96px 16px 0;
+}
+
+.d-head {
+   display: flex;
+   align-items: flex-end;
+   gap: 14px;
+}
+
+.d-poster {
+   flex: none;
+   width: 118px;
+   box-shadow: 0 14px 30px -10px #000;
+}
+
+.d-headtext {
+   min-width: 0;
+   padding-bottom: 4px;
+}
+
+.d-kind {
+   display: inline-block;
+   margin-bottom: 6px;
+   padding: 2px 9px;
+   font-size: 10.5px;
+   letter-spacing: .08em;
+   text-transform: uppercase;
+   color: var(--lavender);
+   background: #8b5cf626;
+   border: 1px solid var(--violet);
+   border-radius: 99px;
+}
+
+.d-headtext h2 {
+   font-size: 22px;
+   font-weight: 700;
+   line-height: 1.15;
+   overflow-wrap: anywhere;
+}
+
+.d-tagline {
+   margin-top: 6px;
+   font-size: 12px;
+   font-style: italic;
+   color: var(--muted);
+}
+
+.detail-label {
+   margin: 24px 0 10px;
+   font-size: 15px;
+}
+
+.d-synopsis {
+   line-height: 1.6;
+   color: #c9cad6;
+   white-space: pre-line;
+}
+
+.d-synopsis.clamp {
+   display: -webkit-box;
+   -webkit-box-orient: vertical;
+   -webkit-line-clamp: 5;
+   line-clamp: 5;
+   overflow: hidden;
+}
+
+#detail-more {
+   margin-top: 6px;
+}
+
+.detail-actions {
+   display: grid;
+   grid-template-columns: 1fr 1fr;
+   gap: 10px;
+   margin-top: 16px;
+}
+
+.detail-actions .btn.ghost {
+   margin-top: 0;
+}
+
+.detail-actions .btn {
+   padding: 13px 8px;
+   font-size: 13px;
+}
+
+.btn.done {
+   color: var(--lavender);
+}
+
+a.btn {
+   display: block;
+}
+
+.d-link {
+   margin-top: 10px;
+}
+
+.facts {
+   display: grid;
+   grid-template-columns: 1fr 1fr;
+   gap: 10px;
+   margin-top: 22px;
+}
+
+.facts:empty {
+   display: none;
+}
+
+.facts div {
+   padding: 10px 12px;
+   background: var(--surface);
+   border: 1px solid var(--line);
+   border-radius: 12px;
+}
+
+.facts dt {
+   font-size: 10.5px;
+   letter-spacing: .06em;
+   text-transform: uppercase;
+   color: var(--muted);
+}
+
+.facts dd {
+   margin: 2px 0 0;
+   font-size: 12.5px;
+   overflow-wrap: anywhere;
+}
+
+/* rails inside the detail page run edge to edge */
+.d-main .rail {
+   margin: 0 -16px;
+}
+
+.cast {
+   flex: none;
+   width: 78px;
+   text-align: center;
+}
+
+.cast-photo {
+   position: relative;
+   display: grid;
+   place-items: center;
+   width: 68px;
+   height: 68px;
+   margin: 0 auto 6px;
+   overflow: hidden;
+   font-weight: 600;
+   color: var(--lavender);
+   background: var(--surface-2);
+   border: 1px solid var(--line);
+   border-radius: 50%;
+}
+
+.cast-photo img {
+   position: absolute;
+   inset: 0;
+   width: 100%;
+   height: 100%;
+   object-fit: cover;
+}
+
+.cast b,
+.cast small {
+   display: block;
+   overflow: hidden;
+   text-overflow: ellipsis;
+   white-space: nowrap;
+}
+
+.cast b {
+   font-size: 11.5px;
+   font-weight: 600;
+}
+
+.cast small {
+   font-size: 10.5px;
+   color: var(--muted);
+}
+
+.shot {
+   flex: none;
+   width: 230px;
+   aspect-ratio: 16 / 9;
+   overflow: hidden;
+   background: var(--surface);
+   border: 1px solid var(--line);
+   border-radius: 12px;
+   scroll-snap-align: start;
+}
+
+.shot img {
+   width: 100%;
+   height: 100%;
+   object-fit: cover;
 }
 
 .back {
@@ -803,29 +1186,11 @@ h3 {
    transform: rotate(45deg);
 }
 
-.detail-body {
-   position: relative;
-   z-index: 3;
-   margin: -70px 16px 0;
-}
-
-.detail-body h2 {
-   font-size: 26px;
-   font-weight: 700;
-   line-height: 1.15;
-}
-
-.detail-body p {
-   margin: 12px 0 18px;
-   line-height: 1.6;
-   color: #c9cad6;
-}
-
 .pills {
    display: flex;
    flex-wrap: wrap;
    gap: 8px;
-   margin: 10px 0;
+   margin: 14px 0 0;
    font-size: 12px;
    color: var(--muted);
 }

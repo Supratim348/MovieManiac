@@ -40,22 +40,23 @@
       </header>
       <p class="welcome">Your universe, your collection.</p>
 
-      <section class="rail-section">
-        <h2 class="section-title">Trending now</h2>
-        <div class="rail" id="rail-trending"></div>
+      <!-- Spotlight: swipeable banners of what's trending this week -->
+      <section class="spot" id="spot" hidden>
+        <div class="spot-track" id="spot-track"></div>
+        <div class="spot-dots" id="spot-dots" aria-hidden="true"></div>
       </section>
-      <section class="rail-section">
-        <h2 class="section-title">New in cinemas</h2>
-        <div class="rail" id="rail-new"></div>
-      </section>
-      <section class="rail-section">
-        <h2 class="section-title">Popular anime</h2>
-        <div class="rail" id="rail-anime"></div>
-      </section>
-      <section class="rail-section">
-        <h2 class="section-title">Top rated series</h2>
-        <div class="rail" id="rail-top"></div>
-      </section>
+
+      <!-- Pick a category to see more rails for it -->
+      <div class="chips" id="home-chips" role="radiogroup" aria-label="Browse by category">
+        <button class="chip on" type="button" role="radio" aria-checked="true" data-group="all">For you</button>
+        <button class="chip" type="button" role="radio" aria-checked="false" data-group="movie">Movies</button>
+        <button class="chip" type="button" role="radio" aria-checked="false" data-group="series">Series</button>
+        <button class="chip" type="button" role="radio" aria-checked="false" data-group="anime">Anime</button>
+        <button class="chip" type="button" role="radio" aria-checked="false" data-group="game" id="chip-games">Games</button>
+      </div>
+
+      <!-- Rails are built by script.js from HOME_RAILS -->
+      <div id="home-rails"></div>
 
       <footer class="credits">
         <!-- TMDB requires its logo plus this notice. Add the logo from
@@ -78,14 +79,33 @@
           <circle cx="11" cy="11" r="7" />
           <path d="M20 20l-4-4" />
         </svg>
-        <input id="search-input" type="search" placeholder="Search movies, series, anime, games" autocomplete="off"
-          aria-label="Search titles">
+        <input id="search-input" type="search" placeholder="Search movies" autocomplete="off" aria-label="Search titles">
         <button id="search-clear" type="button" aria-label="Clear search" hidden>
           <svg class="icon" viewBox="0 0 24 24">
             <path d="M6 6l12 12M18 6L6 18" />
           </svg>
         </button>
       </form>
+
+      <!-- Category picker: the search only looks inside the chosen category -->
+      <div class="kinds" id="search-kinds" role="radiogroup" aria-label="Search in">
+        <button class="kind on" type="button" role="radio" aria-checked="true" data-kind="movie">
+          <svg class="icon" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M7 4v16M17 4v16M3 9h4M3 15h4M17 9h4M17 15h4" /></svg>
+          <span>Movies</span>
+        </button>
+        <button class="kind" type="button" role="radio" aria-checked="false" data-kind="series">
+          <svg class="icon" viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="2" /><path d="M8 3l4 4 4-4" /></svg>
+          <span>Series</span>
+        </button>
+        <button class="kind" type="button" role="radio" aria-checked="false" data-kind="anime">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M11 3l1.8 5.2L18 10l-5.2 1.8L11 17l-1.8-5.2L4 10l5.2-1.8z" /><path d="M19 15v6M16 18h6" /></svg>
+          <span>Anime</span>
+        </button>
+        <button class="kind" type="button" role="radio" aria-checked="false" data-kind="game">
+          <svg class="icon" viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="11" rx="5.5" /><path d="M7 10v5M4.5 12.5h5M16 11.5h.01M18.5 13.5h.01" /></svg>
+          <span>Games</span>
+        </button>
+      </div>
 
       <!-- Search history: shown while the search box is empty -->
       <div id="history">
@@ -179,18 +199,46 @@
   <!-- ============ DETAIL SCREEN (one, refilled for every title) ============ -->
   <article class="detail-screen" id="detail" hidden>
     <button class="back" id="detail-back" aria-label="Back"></button>
-    <div class="hero art" id="detail-art"></div>
-    <div class="detail-body">
+    <div class="d-backdrop" id="detail-backdrop"></div>
+
+    <div class="d-main">
+      <div class="d-head">
+        <div class="art d-poster" id="detail-art"></div>
+        <div class="d-headtext">
+          <span class="d-kind" id="detail-kind"></span>
+          <h2 id="detail-title"></h2>
+          <p class="d-tagline" id="detail-tagline" hidden></p>
+        </div>
+      </div>
+
       <div class="pills" id="detail-pills"></div>
-      <h2 id="detail-title"></h2>
       <div class="pills" id="detail-extra"></div>
-      <h3 class="detail-label">Overview</h3>
-      <p id="detail-synopsis"></p>
+
       <div class="detail-actions">
         <button class="btn" id="detail-save" data-save=""><span class="when-off">Add to My List</span><span
             class="when-on">Unsave</span></button>
         <button class="btn ghost" id="detail-watched" type="button"></button>
       </div>
+      <a class="btn ghost d-link" id="detail-link" target="_blank" rel="noopener" hidden></a>
+
+      <h3 class="detail-label">Overview</h3>
+      <p class="d-synopsis clamp" id="detail-synopsis"></p>
+      <button class="link-btn" id="detail-more" type="button" hidden>Read more</button>
+
+      <dl class="facts" id="detail-facts"></dl>
+
+      <section id="detail-cast-sec" hidden>
+        <h3 class="detail-label">Cast</h3>
+        <div class="rail" id="detail-cast"></div>
+      </section>
+      <section id="detail-shots-sec" hidden>
+        <h3 class="detail-label">Screenshots</h3>
+        <div class="rail" id="detail-shots"></div>
+      </section>
+      <section id="detail-related-sec" hidden>
+        <h3 class="detail-label">More like this</h3>
+        <div class="rail" id="detail-related"></div>
+      </section>
     </div>
   </article>
 

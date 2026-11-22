@@ -32,6 +32,7 @@ const sb = CFG.SUPABASE_URL && CFG.SUPABASE_ANON_KEY && window.supabase
 const PREVIEW = Boolean(CFG.PREVIEW) || new URLSearchParams(location.search).has('preview');
 
 const IMG = 'https://image.tmdb.org/t/p/w500';
+const BACKDROP = 'https://image.tmdb.org/t/p/w780';
 const KIND_LABEL = { movie: 'Movie', series: 'Series', anime: 'Anime', game: 'Game' };
 
 const $ = id => document.getElementById(id);
@@ -63,7 +64,7 @@ function hueOf(key) {
 }
 const artStyle = item => `--a:${hueOf(item.key)};--b:${(hueOf(item.key) + 70) % 360}`;
 const posterHTML = item =>
-  (item.poster ? `<img src="${esc(item.poster)}" alt="" loading="lazy" onerror="this.remove()">` : '') + `<b>${esc(item.title)}</b>`;
+  (item.poster ? `<img src="${esc(item.poster)}" alt="" loading="lazy" onerror="this.remove()">` : '') + `<b data-pk="${esc(item.key)}">${esc(item.title)}</b>`;
 const metaLine = item => [item.year, KIND_LABEL[item.kind], item.rating ? '★ ' + item.rating : ''].filter(Boolean).join(' · ');
 
 /* The columns saved to Supabase for a title. */
@@ -74,7 +75,8 @@ const snapshot = item => ({
 /* ...and back again. */
 const fromRow = r => ({
   key: `${r.media_type}:${r.item_id}`, id: r.item_id, media: r.media_type, kind: r.kind, title: r.title,
-  year: r.year || '', rating: r.rating ? Number(r.rating) : null, poster: r.poster || '', overview: '',
+  year: r.year || '', rating: r.rating ? Number(r.rating) : null, overview: '', backdrop: '',
+  poster: r.media_type === 'game' && coverCache[r.item_id] ? steamCover(coverCache[r.item_id]) : r.poster || '',
 });
 
 /* A few made-up titles so every screen has something to show in preview mode. */
@@ -125,32 +127,152 @@ function fromTmdb(r, media = r.media_type) {
     year: (r.release_date || r.first_air_date || '').slice(0, 4),
     rating: r.vote_average ? Number(r.vote_average.toFixed(1)) : null,
     poster: r.poster_path ? IMG + r.poster_path : '',
+    backdrop: r.backdrop_path ? BACKDROP + r.backdrop_path : '',
     overview: r.overview || '',
   });
 }
 
-/* RAWG game → item (RAWG rates out of 5, so double it to match TMDB's 10). */
-function fromRawg(g) {
-  return remember({
-    key: `game:${g.id}`, id: g.id, media: 'game', kind: 'game', title: g.name,
-    year: (g.released || '').slice(0, 4), rating: g.rating ? Number((g.rating * 2).toFixed(1)) : null,
-    poster: g.background_image || '', overview: '',
+/* ---- Game covers ----------------------------------------------------------
+   RAWG only has wide screenshots (background_image), which look bad cropped into a
+   portrait poster. Steam serves real portrait box art for free, so: ask RAWG which
+   Steam page the game has, read the app id, and use Steam's library_600x900.jpg.
+   Games that aren't on Steam keep the RAWG image. Answers are cached on this device. */
+const COVER_KEY = 'nexus_covers_v1';
+let coverCache = {};                                   // { rawgId: steamAppId | 0 (none) }
+try { coverCache = JSON.parse(localStorage.getItem(COVER_KEY)) || {}; } catch (err) { /* ignore */ }
+const saveCovers = () => { try { localStorage.setItem(COVER_KEY, JSON.stringify(coverCache)); } catch (err) { /* ignore */ } };
+const steamCover = appId => `https://cdn.cloudflare.steamstatic.com/steam/apps/${appId}/library_600x900.jpg`;
+const imageLoads = url => new Promise(done => {
+  const img = new Image();
+  img.onload = () => done(img.naturalWidth > 1);
+  img.onerror = () => done(false);
+  img.src = url;
+});
+
+/* Swap the cover everywhere this title is on screen (cards, rows, tiles, detail page). */
+function setPoster(item, url) {
+  item.poster = url;
+  document.querySelectorAll('b[data-pk]').forEach(label => {
+    if (label.dataset.pk !== item.key) return;
+    const before = label.previousElementSibling;
+    if (before && before.tagName === 'IMG') { before.src = url; return; }
+    const img = new Image();
+    img.alt = '';
+    img.loading = 'lazy';
+    img.onerror = () => img.remove();
+    img.src = url;
+    label.before(img);
   });
 }
 
-/* Extra detail for the detail page: description plus small pills. */
-async function loadInfo(item) {
-  if (useSample) return { overview: item.overview, extra: [KIND_LABEL[item.kind]] };
-  if (item.media === 'game') {
-    const g = await rawg('/games/' + item.id);
-    const platforms = (g.platforms || []).slice(0, 3).map(p => p.platform.name).join(' · ');
-    return { overview: g.description_raw, extra: [...(g.genres || []).slice(0, 3).map(x => x.name), platforms].filter(Boolean) };
+async function findGameCover(item) {
+  if (!item || item.media !== 'game' || !CFG.RAWG_KEY || useSample) return;
+  let appId = coverCache[item.id];
+  if (appId === undefined) {
+    try {
+      const data = await rawg(`/games/${item.id}/stores`);
+      const steam = (data.results || []).find(s => s.store_id === 1 || /store\.steampowered\.com/.test(s.url || ''));
+      const match = steam && (steam.url || '').match(/\/app\/(\d+)/);
+      appId = match ? Number(match[1]) : 0;
+      if (appId && !(await imageLoads(steamCover(appId)))) appId = 0;   // some old apps have no portrait art
+    } catch (err) { return; }                                           // network hiccup: try again next time
+    coverCache[item.id] = appId;
+    saveCovers();
   }
-  const d = await tmdb(`/${item.media}/${item.id}`);
-  const extra = (d.genres || []).slice(0, 3).map(g => g.name);
-  if (d.runtime) extra.push(`${Math.floor(d.runtime / 60)}h ${d.runtime % 60}m`);
-  if (d.number_of_seasons) extra.push(`${d.number_of_seasons} seasons · ${d.number_of_episodes} eps`);
-  return { overview: d.overview, extra };
+  if (appId) setPoster(item, steamCover(appId));
+}
+
+/* RAWG game → item (RAWG rates out of 5, so double it to match TMDB's 10). */
+function fromRawg(g) {
+  const appId = coverCache[g.id];
+  return remember({
+    key: `game:${g.id}`, id: g.id, media: 'game', kind: 'game', title: g.name,
+    year: (g.released || '').slice(0, 4), rating: g.rating ? Number((g.rating * 2).toFixed(1)) : null,
+    poster: appId ? steamCover(appId) : g.background_image || '',
+    backdrop: g.background_image || '', overview: '',
+  });
+}
+
+/* Extra detail for the detail page. Always the same shape, whatever the source. */
+const EMPTY_INFO = { overview: '', tagline: '', genres: [], meta: [], facts: [], cast: [], shots: [], related: [], link: null, backdrop: '' };
+const langName = code => { try { return new Intl.DisplayNames(['en'], { type: 'language' }).of(code); } catch (err) { return code || ''; } };
+const hoursMins = min => `${Math.floor(min / 60)}h ${min % 60}m`;
+
+async function loadInfo(item) {
+  if (useSample) return { ...EMPTY_INFO, overview: item.overview, genres: [KIND_LABEL[item.kind]] };
+
+  if (item.media === 'game') {
+    const [game, shots, suggested, series] = await Promise.allSettled([
+      rawg('/games/' + item.id),
+      rawg(`/games/${item.id}/screenshots?page_size=8`),
+      rawg(`/games/${item.id}/suggested?page_size=10`),
+      rawg(`/games/${item.id}/game-series?page_size=10`),
+    ]);
+    if (game.status !== 'fulfilled') throw game.reason;
+    const g = game.value;
+    const names = list => (list || []).map(x => x.name).join(', ');
+    const related = [suggested, series]
+      .map(r => (r.status === 'fulfilled' ? r.value.results || [] : []))
+      .find(list => list.length) || [];
+    const relatedItems = related.slice(0, 10).map(fromRawg);
+    relatedItems.forEach(findGameCover);
+    return {
+      ...EMPTY_INFO,
+      overview: g.description_raw,
+      genres: (g.genres || []).slice(0, 4).map(x => x.name),
+      meta: g.metacritic ? ['Metacritic ' + g.metacritic] : [],
+      facts: [
+        ['Released', g.released ? prettyDate(g.released) : ''],
+        ['Developer', names((g.developers || []).slice(0, 2))],
+        ['Publisher', names((g.publishers || []).slice(0, 2))],
+        ['Platforms', (g.platforms || []).slice(0, 5).map(p => p.platform.name).join(', ')],
+        ['Age rating', g.esrb_rating ? g.esrb_rating.name : ''],
+        ['Avg. playtime', g.playtime ? g.playtime + ' hours' : ''],
+      ].filter(f => f[1]),
+      shots: shots.status === 'fulfilled' ? (shots.value.results || []).map(x => x.image) : [],
+      related: relatedItems,
+      link: g.website ? { url: g.website, label: 'Official website' } : null,
+      backdrop: g.background_image || item.backdrop,
+    };
+  }
+
+  const d = await tmdb(`/${item.media}/${item.id}?append_to_response=credits,videos,recommendations`);
+  const isTv = item.media === 'tv';
+  const crew = (d.credits && d.credits.crew) || [];
+  const videos = (d.videos && d.videos.results || []).filter(v => v.site === 'YouTube');
+  const trailer = videos.find(v => v.type === 'Trailer' && v.official) || videos.find(v => v.type === 'Trailer') || videos[0];
+  const first = (list, field) => (list && list[0] ? list[0][field] : '');
+  const meta = [];
+  if (d.runtime) meta.push(hoursMins(d.runtime));
+  if (d.number_of_seasons) meta.push(`${d.number_of_seasons} ${d.number_of_seasons === 1 ? 'season' : 'seasons'}`);
+  const facts = isTv ? [
+    ['First aired', d.first_air_date ? prettyDate(d.first_air_date) : ''],
+    ['Episodes', d.number_of_episodes],
+    ['Episode length', first(d.episode_run_time) ? first(d.episode_run_time) + ' min' : ''],
+    ['Status', d.status],
+    ['Network', first(d.networks, 'name')],
+    ['Created by', (d.created_by || []).slice(0, 2).map(c => c.name).join(', ')],
+    ['Language', langName(d.original_language)],
+  ] : [
+    ['Released', d.release_date ? prettyDate(d.release_date) : ''],
+    ['Director', crew.filter(c => c.job === 'Director').slice(0, 2).map(c => c.name).join(', ')],
+    ['Status', d.status],
+    ['Language', langName(d.original_language)],
+  ];
+  return {
+    ...EMPTY_INFO,
+    overview: d.overview,
+    tagline: d.tagline || '',
+    genres: (d.genres || []).slice(0, 4).map(g => g.name),
+    meta,
+    facts: facts.filter(f => f[1]),
+    cast: ((d.credits && d.credits.cast) || []).slice(0, 12).map(c => ({
+      name: c.name, sub: c.character || '', img: c.profile_path ? 'https://image.tmdb.org/t/p/w185' + c.profile_path : '',
+    })),
+    related: ((d.recommendations && d.recommendations.results) || []).slice(0, 12).map(r => fromTmdb(r, item.media)).filter(Boolean),
+    link: trailer ? { url: 'https://www.youtube.com/watch?v=' + trailer.key, label: '▶  Watch trailer' } : null,
+    backdrop: d.backdrop_path ? BACKDROP + d.backdrop_path : item.backdrop,
+  };
 }
 
 /* ==========================================================================
@@ -319,29 +441,158 @@ function tileEl(item) {
 
 /* ---- Home ---- */
 
-const RAILS = {
-  'rail-trending': { path: '/trending/all/week', media: null },
-  'rail-new': { path: '/movie/now_playing', media: 'movie' },
-  'rail-anime': { path: '/discover/tv?with_genres=16&with_original_language=ja&sort_by=popularity.desc', media: 'tv' },
-  'rail-top': { path: '/tv/top_rated', media: 'tv' },
+/* Each rail: which category chip it belongs to (kind), whether "For you" shows it (all),
+   and how to get its titles. Rails in the same chip show in this order. */
+const inKind = kind => list => list.filter(i => i && i.kind === kind);
+const tmdbList = (path, media, kind) => async () => {
+  const data = await tmdb(path);
+  const items = data.results.map(r => fromTmdb(r, media || r.media_type));
+  return kind ? inKind(kind)(items) : items.filter(Boolean);
 };
+const rawgList = query => async () => (await rawg('/games?exclude_additions=true&page_size=14&' + query)).results.map(fromRawg);
+const daysAgo = n => new Date(Date.now() - n * 864e5).toISOString().slice(0, 10);
+const ANIME_TV = '/discover/tv?with_genres=16&with_original_language=ja&sort_by=';
 
-async function loadHome() {
-  if (useSample) {                                   // preview without a TMDB token
-    Object.keys(RAILS).forEach((id, n) => $(id).replaceChildren(...[...SAMPLE.slice(n), ...SAMPLE.slice(0, n)].map(cardEl)));
+const HOME_RAILS = [
+  { id: 'trending', title: 'Top 10 this week', kind: null, all: true, ranked: true, load: tmdbList('/trending/all/week') },
+  { id: 'cinemas', title: 'New in cinemas', kind: 'movie', all: true, load: tmdbList('/movie/now_playing', 'movie', 'movie') },
+  { id: 'anime-pop', title: 'Popular anime', kind: 'anime', all: true, load: tmdbList(ANIME_TV + 'popularity.desc', 'tv') },
+  { id: 'series-top', title: 'Top rated series', kind: 'series', all: true, load: tmdbList('/tv/top_rated', 'tv', 'series') },
+  { id: 'games-pop', title: 'Popular games', kind: 'game', all: true, load: rawgList('ordering=-added') },
+
+  { id: 'movie-pop', title: 'Popular movies', kind: 'movie', load: tmdbList('/movie/popular', 'movie', 'movie') },
+  { id: 'movie-top', title: 'Top rated movies', kind: 'movie', load: tmdbList('/movie/top_rated', 'movie', 'movie') },
+  { id: 'movie-soon', title: 'Coming soon', kind: 'movie', load: tmdbList('/movie/upcoming', 'movie', 'movie') },
+
+  { id: 'series-pop', title: 'Popular series', kind: 'series', load: tmdbList('/tv/popular', 'tv', 'series') },
+  { id: 'series-air', title: 'On the air now', kind: 'series', load: tmdbList('/tv/on_the_air', 'tv', 'series') },
+
+  { id: 'anime-top', title: 'Top rated anime', kind: 'anime', load: tmdbList(ANIME_TV + 'vote_average.desc&vote_count.gte=800', 'tv') },
+  { id: 'anime-new', title: 'Airing recently', kind: 'anime', load: tmdbList(ANIME_TV + 'popularity.desc&first_air_date.gte=' + daysAgo(540), 'tv') },
+  { id: 'anime-film', title: 'Anime films', kind: 'anime', load: tmdbList('/discover/movie?with_genres=16&with_original_language=ja&sort_by=popularity.desc', 'movie') },
+
+  { id: 'games-top', title: 'Critics’ favourites', kind: 'game', load: rawgList('ordering=-metacritic&metacritic=80,100') },
+  { id: 'games-new', title: 'Recently released', kind: 'game', load: rawgList(`ordering=-added&dates=${daysAgo(120)},${daysAgo(0)}`) },
+];
+
+const railCache = {};                                           // id → items, so switching chips is instant
+let homeGroup = 'all';
+const gamesAvailable = () => Boolean(CFG.RAWG_KEY) || useSample;
+
+function rankedCard(item, n) {
+  const el = cardEl(item);
+  el.classList.add('ranked');
+  el.insertAdjacentHTML('afterbegin', `<i class="rank">${n}</i>`);
+  return el;
+}
+
+function fillRail(def, items) {
+  const rail = $('rail-' + def.id);
+  if (!rail) return;                                            // user switched chips meanwhile
+  if (!items.length) { rail.closest('.rail-section').hidden = true; return; }
+  rail.replaceChildren(...items.map((item, n) => (def.ranked ? rankedCard(item, n + 1) : cardEl(item))));
+}
+
+async function loadRail(def) {
+  if (railCache[def.id]) return fillRail(def, railCache[def.id]);
+  try {
+    let items;
+    if (useSample) {
+      const pool = def.kind ? SAMPLE.filter(i => i.kind === def.kind) : SAMPLE;
+      const spin = HOME_RAILS.indexOf(def) % Math.max(pool.length, 1);
+      items = [...pool.slice(spin), ...pool.slice(0, spin)];
+    } else {
+      items = (await def.load()).slice(0, def.ranked ? 10 : 14);
+    }
+    railCache[def.id] = items;
+    fillRail(def, items);
+    if (def.kind === 'game') items.forEach(findGameCover);
+  } catch (err) {
+    const rail = $('rail-' + def.id);
+    if (rail) rail.innerHTML = '<p class="note" style="padding:0">Could not load titles right now.</p>';
+  }
+}
+
+function renderHomeRails() {
+  const defs = HOME_RAILS.filter(def =>
+    (homeGroup === 'all' ? def.all : def.kind === homeGroup) && (def.kind !== 'game' || gamesAvailable()));
+  $('home-rails').replaceChildren(...defs.map(def => {
+    const section = document.createElement('section');
+    section.className = 'rail-section';
+    section.innerHTML = `<h2 class="section-title">${esc(def.title)}</h2><div class="rail" id="rail-${def.id}">${
+      railCache[def.id] ? '' : '<div class="card"><div class="skeleton"></div></div>'.repeat(3)}</div>`;
+    return section;
+  }));
+  if (homeGroup === 'game' && !gamesAvailable()) {
+    $('home-rails').innerHTML = `<p class="note">${esc(NEEDS_RAWG)}</p>`;
     return;
   }
-  await Promise.all(Object.entries(RAILS).map(async ([id, { path, media }]) => {
-    const rail = $(id);
-    rail.innerHTML = '<div class="card"><div class="skeleton"></div></div>'.repeat(3);
-    try {
-      const data = await tmdb(path);
-      const items = data.results.map(r => fromTmdb(r, media || r.media_type)).filter(Boolean).slice(0, 14);
-      rail.replaceChildren(...items.map(cardEl));
-    } catch (err) {
-      rail.innerHTML = '<p class="note" style="padding:0">Could not load titles. Check your TMDB token in config.js.</p>';
-    }
-  }));
+  defs.forEach(loadRail);
+}
+
+$('home-chips').addEventListener('click', event => {
+  const chip = event.target.closest('[data-group]');
+  if (!chip || chip.dataset.group === homeGroup) return;
+  homeGroup = chip.dataset.group;
+  document.querySelectorAll('#home-chips .chip').forEach(c => {
+    c.classList.toggle('on', c === chip);
+    c.setAttribute('aria-checked', c === chip);
+  });
+  chip.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
+  renderHomeRails();
+});
+
+/* ---- Spotlight banners ---- */
+
+function spotEl(item) {
+  const el = document.createElement('article');
+  el.className = 'spot-slide';
+  el.setAttribute('style', artStyle(item));
+  el.innerHTML =
+    (item.backdrop ? `<img src="${esc(item.backdrop)}" alt="" onerror="this.remove()">` : '') +
+    `<div class="spot-info"><em class="tag">${KIND_LABEL[item.kind]}</em><h2>${esc(item.title)}</h2><p>${esc(metaLine(item))}</p></div>` +
+    `<button class="plus" data-save="${esc(item.key)}" aria-label="Save ${esc(item.title)} to a list"></button>` +
+    `<button class="cover" data-open="${esc(item.key)}" aria-label="Open ${esc(item.title)}"></button>`;
+  el.querySelector('.plus').classList.toggle('saved', isSaved(item.key));
+  return el;
+}
+
+let spotTimer = null;
+function startSpotTimer() {
+  clearInterval(spotTimer);
+  spotTimer = setInterval(() => {
+    const track = $('spot-track');
+    if (!$('tab-home').checked || !$('detail').hidden || document.hidden || track.children.length < 2) return;
+    const next = (Math.round(track.scrollLeft / track.clientWidth) + 1) % track.children.length;
+    track.scrollTo({ left: next * track.clientWidth, behavior: 'smooth' });
+  }, 5500);
+}
+
+async function loadSpotlight() {
+  let items;
+  try {
+    items = useSample
+      ? SAMPLE.slice(0, 6)
+      : (await tmdb('/trending/all/week')).results.map(r => fromTmdb(r)).filter(i => i && i.backdrop).slice(0, 6);
+  } catch (err) { return; }
+  if (!items.length) return;
+  $('spot-track').replaceChildren(...items.map(spotEl));
+  $('spot-dots').innerHTML = items.map((_, n) => `<span class="${n ? '' : 'on'}"></span>`).join('');
+  $('spot').hidden = false;
+  startSpotTimer();
+}
+
+$('spot-track').addEventListener('scroll', () => {
+  const track = $('spot-track');
+  const at = Math.round(track.scrollLeft / (track.clientWidth || 1));
+  [...$('spot-dots').children].forEach((dot, n) => dot.classList.toggle('on', n === at));
+}, { passive: true });
+$('spot-track').addEventListener('pointerdown', startSpotTimer);   // give people time after they touch it
+
+function loadHome() {
+  $('chip-games').hidden = !gamesAvailable();
+  renderHomeRails();
+  loadSpotlight();
 }
 
 /* ---- Search ---- */
@@ -349,6 +600,51 @@ async function loadHome() {
 const input = $('search-input');
 let searchTimer = null;
 let searchRun = 0;                                  // ignore answers that arrive after a newer search
+
+/* The category picker. Search and the "Popular" rail only use the chosen one. */
+const KINDS = {
+  movie: { label: 'Movies', placeholder: 'Search movies' },
+  series: { label: 'Series', placeholder: 'Search TV series' },
+  anime: { label: 'Anime', placeholder: 'Search anime' },
+  game: { label: 'Games', placeholder: 'Search games' },
+};
+let searchKind = 'movie';
+
+function syncKinds() {
+  document.querySelectorAll('#search-kinds .kind').forEach(btn => {
+    const on = btn.dataset.kind === searchKind;
+    btn.classList.toggle('on', on);
+    btn.setAttribute('aria-checked', on);
+  });
+  input.placeholder = KINDS[searchKind].placeholder;
+}
+
+const NEEDS_RAWG = 'Game search needs a RAWG key. Uncomment RAWG_KEY in config.js and paste your key.';
+
+async function searchTitles(kind, text) {
+  const q = encodeURIComponent(text);
+  if (useSample) return SAMPLE.filter(i => i.kind === kind && i.title.toLowerCase().includes(text.toLowerCase()));
+  if (kind === 'game') {
+    if (!CFG.RAWG_KEY) throw new Error(NEEDS_RAWG);
+    const data = await rawg(`/games?page_size=12&exclude_additions=true&search=${q}`);
+    return data.results.map(fromRawg);
+  }
+  if (kind === 'movie') {
+    const data = await tmdb('/search/movie?query=' + q);
+    return data.results.map(r => fromTmdb(r, 'movie')).filter(i => i && i.kind === 'movie');   // anime films live under Anime
+  }
+  if (kind === 'series') {
+    const data = await tmdb('/search/tv?query=' + q);
+    return data.results.map(r => fromTmdb(r, 'tv')).filter(i => i && i.kind === 'series');
+  }
+  const [tv1, tv2, films] = await Promise.all([                                                  // anime: series and films
+    tmdb('/search/tv?query=' + q), tmdb('/search/tv?page=2&query=' + q), tmdb('/search/movie?query=' + q),
+  ]);
+  return [
+    ...[...tv1.results, ...tv2.results].map(r => fromTmdb(r, 'tv')),
+    ...films.results.map(r => fromTmdb(r, 'movie')),
+  ].filter(i => i && i.kind === 'anime');
+}
 
 function showResultsUI(typing) {
   $('history').hidden = typing;
@@ -361,30 +657,35 @@ function showResultsUI(typing) {
 
 async function runSearch(text) {
   const run = ++searchRun;
+  const kind = searchKind;
   $('search-status').textContent = 'Searching…';
   $('search-status').hidden = false;
+  $('search-heading').hidden = true;
+  $('search-empty').hidden = true;
+  $('search-results').replaceChildren();
   try {
-    let items;
-    if (useSample) {
-      items = SAMPLE.filter(i => i.title.toLowerCase().includes(text.toLowerCase()));
-    } else {
-      const [movies, games] = await Promise.all([
-        tmdb('/search/multi?query=' + encodeURIComponent(text)),
-        CFG.RAWG_KEY ? rawg('/games?page_size=8&search=' + encodeURIComponent(text)) : { results: [] },
-      ]);
-      if (run !== searchRun) return;
-      items = [...movies.results.map(r => fromTmdb(r)).filter(Boolean), ...games.results.map(fromRawg)];
-    }
+    const items = await searchTitles(kind, text);
+    if (run !== searchRun) return;
     $('search-status').hidden = true;
     $('search-heading').hidden = items.length === 0;
-    $('search-heading').textContent = `${items.length} ${items.length === 1 ? 'result' : 'results'} for “${text}”`;
+    $('search-heading').textContent = `${items.length} ${items.length === 1 ? 'result' : 'results'} in ${KINDS[kind].label} for “${text}”`;
     $('search-empty').hidden = items.length > 0;
     $('search-results').replaceChildren(...items.map(item => rowEl(item)));
+    if (kind === 'game') items.forEach(findGameCover);            // upgrade to portrait box art
   } catch (err) {
     if (run !== searchRun) return;
-    $('search-status').textContent = 'Search failed. Check your connection and keys, then try again.';
+    $('search-status').textContent = err.message === NEEDS_RAWG ? NEEDS_RAWG : 'Search failed. Check your connection and keys, then try again.';
   }
 }
+
+$('search-kinds').addEventListener('click', event => {
+  const btn = event.target.closest('[data-kind]');
+  if (!btn || btn.dataset.kind === searchKind) return;
+  searchKind = btn.dataset.kind;
+  syncKinds();
+  const text = input.value.trim();
+  if (text) { clearTimeout(searchTimer); runSearch(text); }
+});
 
 input.addEventListener('input', () => {
   clearTimeout(searchTimer);
@@ -599,17 +900,73 @@ $('new-list-form').addEventListener('submit', event => {
   createList(name, pendingItem);                     // also adds the title being saved, if any
 });
 
-/* ---- Detail page ---- */
+/* ---- Detail page (opens when a poster is tapped) ---- */
 
 let detailItem = null;
+const detailStack = [];                                           // titles we came from, so Back goes one step back
+
+const fillDetailRail = (sectionId, railId, nodes) => {
+  $(sectionId).hidden = nodes.length === 0;
+  $(railId).replaceChildren(...nodes);
+};
+
+function castEl(person) {
+  const el = document.createElement('div');
+  el.className = 'cast';
+  el.innerHTML = `<span class="cast-photo">${person.img ? `<img src="${esc(person.img)}" alt="" loading="lazy" onerror="this.remove()">` : ''}${esc(person.name.slice(0, 1))}</span>` +
+    `<b>${esc(person.name)}</b><small>${esc(person.sub)}</small>`;
+  return el;
+}
+
+function shotEl(url) {
+  const el = document.createElement('a');
+  el.className = 'shot';
+  el.href = url;
+  el.target = '_blank';
+  el.rel = 'noopener';
+  el.innerHTML = `<img src="${esc(url)}" alt="Screenshot" loading="lazy" onerror="this.parentNode.remove()">`;
+  return el;
+}
 
 function renderDetail(item, info) {
+  const loaded = Boolean(info);
+  info = info || EMPTY_INFO;
+  const wide = info.backdrop || item.backdrop || '';
+  const backdrop = $('detail-backdrop');
+  backdrop.className = 'd-backdrop' + (wide ? '' : ' blur');         // no wide image: use the poster, blurred
+  backdrop.setAttribute('style', artStyle(item));
+  backdrop.innerHTML = wide || item.poster ? `<img src="${esc(wide || item.poster)}" alt="" onerror="this.remove()">` : '';
+
   $('detail-art').setAttribute('style', artStyle(item));
-  $('detail-art').innerHTML = posterHTML({ ...item, poster: item.poster.replace('/w500/', '/w780/') });
-  $('detail-pills').innerHTML = `${item.rating ? `<span class="rating">★ ${item.rating}</span>` : ''}${item.year ? `<span>${item.year}</span>` : ''}<span>${KIND_LABEL[item.kind]}</span>`;
+  $('detail-art').innerHTML = posterHTML({ ...item, poster: (item.poster || '').replace('/w500/', '/w780/') });
+  $('detail-kind').textContent = KIND_LABEL[item.kind];
   $('detail-title').textContent = item.title;
-  $('detail-extra').innerHTML = (info ? info.extra : []).map(text => `<span>${esc(text)}</span>`).join('');
-  $('detail-synopsis').textContent = (info && info.overview) || item.overview || (info ? 'No description available.' : 'Loading…');
+  $('detail-tagline').textContent = info.tagline;
+  $('detail-tagline').hidden = !info.tagline;
+
+  const pills = [
+    item.rating ? `<span class="rating">★ ${item.rating}</span>` : '',
+    item.year ? `<span>${esc(item.year)}</span>` : '',
+    ...info.meta.map(text => `<span>${esc(text)}</span>`),
+  ];
+  $('detail-pills').innerHTML = pills.join('');
+  $('detail-extra').innerHTML = info.genres.map(text => `<span>${esc(text)}</span>`).join('');
+
+  const synopsis = $('detail-synopsis');
+  synopsis.textContent = info.overview || item.overview || (loaded ? 'No description available.' : 'Loading…');
+  synopsis.classList.add('clamp');
+  $('detail-more').textContent = 'Read more';
+  requestAnimationFrame(() => { $('detail-more').hidden = synopsis.scrollHeight <= synopsis.clientHeight + 1; });
+
+  $('detail-facts').innerHTML = info.facts.map(([label, value]) => `<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`).join('');
+  const link = $('detail-link');
+  link.hidden = !info.link;
+  if (info.link) { link.href = info.link.url; link.textContent = info.link.label; }
+
+  fillDetailRail('detail-cast-sec', 'detail-cast', info.cast.map(castEl));
+  fillDetailRail('detail-shots-sec', 'detail-shots', info.shots.map(shotEl));
+  fillDetailRail('detail-related-sec', 'detail-related', info.related.map(cardEl));
+
   $('detail-save').dataset.save = item.key;
   $('detail-save').classList.toggle('saved', isSaved(item.key));
   renderWatchedButton(item);
@@ -637,20 +994,33 @@ function openWatchedSheet() {
 }
 function closeWatchedSheet() { $('watched-sheet').hidden = true; }
 
-async function openDetail(item) {
+async function openDetail(item, { push = false } = {}) {
+  if (push && detailItem) detailStack.push(detailItem);
   detailItem = item;
   renderDetail(item, null);
   $('detail').hidden = false;
   $('detail').scrollTop = 0;
+  findGameCover(item);                                          // better box art for games
   try {
     const info = await loadInfo(item);
+    if (info.backdrop) item.backdrop = info.backdrop;
     if (detailItem === item) renderDetail(item, info);          // skip if another title was opened meanwhile
   } catch (err) {
-    if (detailItem === item) renderDetail(item, { extra: [], overview: '' });
+    if (detailItem === item) renderDetail(item, EMPTY_INFO);
   }
 }
 
-$('detail-back').addEventListener('click', () => { $('detail').hidden = true; detailItem = null; });
+function closeDetail() {
+  if (detailStack.length) { openDetail(detailStack.pop()); return; }   // came from "More like this": step back
+  $('detail').hidden = true;
+  detailItem = null;
+}
+
+$('detail-back').addEventListener('click', closeDetail);
+$('detail-more').addEventListener('click', () => {
+  const open = $('detail-synopsis').classList.toggle('clamp');
+  $('detail-more').textContent = open ? 'Read more' : 'Show less';
+});
 $('detail-watched').addEventListener('click', openWatchedSheet);
 $('watched-cancel').addEventListener('click', closeWatchedSheet);
 $('watched-sheet').addEventListener('click', event => { if (event.target === event.currentTarget) closeWatchedSheet(); });
@@ -669,7 +1039,7 @@ $('watched-form').addEventListener('submit', event => {
 /* One listener for every poster (data-open) and save button (data-save). */
 document.addEventListener('click', event => {
   const open = event.target.closest('[data-open]');
-  if (open) { const item = cache.get(open.dataset.open); if (item) openDetail(item); return; }
+  if (open) { const item = cache.get(open.dataset.open); if (item) openDetail(item, { push: Boolean(open.closest('#detail')) }); return; }
   const save = event.target.closest('[data-save]');
   if (save) handleSave(save.dataset.save);
 });
@@ -693,8 +1063,12 @@ async function start(user) {
   refresh();
   renderCalendar();
   renderHistory();
+  syncKinds();
   loadHome();
   hideSplash();
+  const games = new Map();                                    // saved/logged games get their better cover too
+  [...lists.flatMap(l => l.items), ...watch.map(w => w.item)].forEach(i => { if (i.media === 'game') games.set(i.key, i); });
+  games.forEach(findGameCover);
 }
 
 function showSignIn() {
