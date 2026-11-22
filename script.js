@@ -1046,7 +1046,11 @@ document.addEventListener('click', event => {
 
 $('auth-form').addEventListener('submit', event => { event.preventDefault(); signIn(); });
 $('auth-signup').addEventListener('click', signUp);
-$('sign-out').addEventListener('click', () => sb.auth.signOut());
+$('sign-out').addEventListener('click', async () => {
+  if (!confirm('Sign out of NEXUS?')) return;
+  const { error } = await sb.auth.signOut();
+  if (error) toast('Could not sign out: ' + error.message);
+});
 
 /* ==========================================================================
    7. START
@@ -1075,9 +1079,24 @@ function showSignIn() {
   startedFor = null;
   lists = [];
   watch = [];
-  cache.clear();
+  openListId = null;
+  pendingItem = null;
+  detailItem = null;
+  detailStack.length = 0;
+  searchRun++;                                                 // drop any search still in flight
+  // Close everything that could be left open on top of the sign-in screen.
+  ['detail', 'list-view', 'save-sheet', 'watched-sheet', 'new-list'].forEach(id => { $(id).hidden = true; });
+  $('tab-home').checked = true;
+  input.value = '';
+  showResultsUI(false);
+  Object.assign(calendar, { year: now.getFullYear(), month: now.getMonth(), selected: todayKey });
+  $('auth-password').value = '';
+  authMessage('');
+  /* The item lookup (cache) is NOT cleared: the Home rails keep their titles between
+     sessions, and clearing it made every poster stop opening after signing back in. */
   refresh();
   renderCalendar();
+  window.scrollTo(0, 0);
   $('auth').hidden = false;
   hideSplash();
 }
@@ -1090,8 +1109,6 @@ function hideSplash() {
   setTimeout(() => { splash.hidden = true; }, 400);
 }
 setTimeout(hideSplash, 8000);
-
-$('rawg-credit').hidden = !CFG.RAWG_KEY;
 
 if (PREVIEW) {
   $('sign-out').hidden = true;
