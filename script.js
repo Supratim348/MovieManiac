@@ -621,29 +621,43 @@ function syncKinds() {
 
 const NEEDS_RAWG = 'Game search needs a RAWG key. Uncomment RAWG_KEY in config.js and paste your key.';
 
+/* "blue 2009" → title "blue" + year 2009 (a trailing 4-digit year, with or without brackets). */
+function splitYear(text) {
+  const m = text.match(/^(.*?)\s*\(?\b((?:19|20)\d{2})\)?$/);
+  return m && m[1].trim() ? { title: m[1].trim(), year: m[2] } : { title: text, year: '' };
+}
+
 async function searchTitles(kind, text) {
-  const q = encodeURIComponent(text);
-  if (useSample) return SAMPLE.filter(i => i.kind === kind && i.title.toLowerCase().includes(text.toLowerCase()));
+  const { title, year } = splitYear(text);
+  const q = encodeURIComponent(title);
+  if (useSample) return SAMPLE.filter(i => i.kind === kind && i.title.toLowerCase().includes(title.toLowerCase()) && (!year || String(i.year) === year));
+
   if (kind === 'game') {
     if (!CFG.RAWG_KEY) throw new Error(NEEDS_RAWG);
-    const data = await rawg(`/games?page_size=12&exclude_additions=true&search=${q}`);
+    const dates = year ? `&dates=${year}-01-01,${year}-12-31` : '';
+    const data = await rawg(`/games?page_size=12&exclude_additions=true&search=${q}${dates}`);
     return data.results.map(fromRawg);
   }
-  if (kind === 'movie') {
-    const data = await tmdb('/search/movie?query=' + q);
-    return data.results.map(r => fromTmdb(r, 'movie')).filter(i => i && i.kind === 'movie');   // anime films live under Anime
-  }
-  if (kind === 'series') {
-    const data = await tmdb('/search/tv?query=' + q);
-    return data.results.map(r => fromTmdb(r, 'tv')).filter(i => i && i.kind === 'series');
-  }
-  const [tv1, tv2, films] = await Promise.all([                                                  // anime: series and films
-    tmdb('/search/tv?query=' + q), tmdb('/search/tv?page=2&query=' + q), tmdb('/search/movie?query=' + q),
-  ]);
-  return [
-    ...[...tv1.results, ...tv2.results].map(r => fromTmdb(r, 'tv')),
-    ...films.results.map(r => fromTmdb(r, 'movie')),
-  ].filter(i => i && i.kind === 'anime');
+
+  const movieQ = `/search/movie?query=${q}${year ? '&year=' + year : ''}`;
+  const tvQ = `/search/tv?query=${q}${year ? '&first_air_date_year=' + year : ''}`;
+  const page2 = path => path + '&page=2';
+  const find = async () => {
+    if (kind === 'movie') {
+      const [p1, p2] = await Promise.all([tmdb(movieQ), tmdb(page2(movieQ))]);
+      return [...p1.results, ...p2.results].map(r => fromTmdb(r, 'movie')).filter(i => i && i.kind === 'movie');   // anime films live under Anime
+    }
+    if (kind === 'series') {
+      const [p1, p2] = await Promise.all([tmdb(tvQ), tmdb(page2(tvQ))]);
+      return [...p1.results, ...p2.results].map(r => fromTmdb(r, 'tv')).filter(i => i && i.kind === 'series');
+    }
+    const [tv1, tv2, films] = await Promise.all([tmdb(tvQ), tmdb(page2(tvQ)), tmdb(movieQ)]);        // anime: series and films
+    return [
+      ...[...tv1.results, ...tv2.results].map(r => fromTmdb(r, 'tv')),
+      ...films.results.map(r => fromTmdb(r, 'movie')),
+    ].filter(i => i && i.kind === 'anime');
+  };
+  return find();
 }
 
 function showResultsUI(typing) {
