@@ -23,6 +23,7 @@
    box-sizing: border-box;
    margin: 0;
    -webkit-tap-highlight-color: transparent;
+   scrollbar-width: none;
 }
 
 [hidden] {
@@ -239,13 +240,8 @@ h3 {
    gap: 12px;
    padding: 0 16px 4px;
    overflow-x: auto;
-   scrollbar-width: none;
    scroll-snap-type: x proximity;
    scroll-padding-left: 16px;
-}
-
-.rail::-webkit-scrollbar {
-   display: none;
 }
 
 .card {
@@ -1026,10 +1022,36 @@ h3 {
    }
 }
 
-* {
-   scrollbar-width: none;
-}
-
 *::-webkit-scrollbar {
    display: none;
+}
+
+/* Loading screen */
+.splash {
+   position: fixed;
+   inset: 0;
+   z-index: 100;
+   display: grid;
+   place-content: center;
+   justify-items: center;
+   gap: 16px;
+   background: var(--bg);
+   transition: opacity .35s ease;
+}
+
+.splash.done {
+   opacity: 0;
+   pointer-events: none;
+}
+
+.splash-mark {
+   height: 56px;
+   animation: pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes pulse {
+   50% {
+      transform: scale(1.08);
+      opacity: .8;
+   }
 }

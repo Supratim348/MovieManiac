@@ -321,9 +321,9 @@ function tileEl(item) {
 
 const RAILS = {
   'rail-trending': { path: '/trending/all/week', media: null },
-  'rail-new':      { path: '/movie/now_playing', media: 'movie' },
-  'rail-anime':    { path: '/discover/tv?with_genres=16&with_original_language=ja&sort_by=popularity.desc', media: 'tv' },
-  'rail-top':      { path: '/tv/top_rated', media: 'tv' },
+  'rail-new': { path: '/movie/now_playing', media: 'movie' },
+  'rail-anime': { path: '/discover/tv?with_genres=16&with_original_language=ja&sort_by=popularity.desc', media: 'tv' },
+  'rail-top': { path: '/tv/top_rated', media: 'tv' },
 };
 
 async function loadHome() {
@@ -694,6 +694,7 @@ async function start(user) {
   renderCalendar();
   renderHistory();
   loadHome();
+  hideSplash();
 }
 
 function showSignIn() {
@@ -704,7 +705,17 @@ function showSignIn() {
   refresh();
   renderCalendar();
   $('auth').hidden = false;
+  hideSplash();
 }
+
+/* Loading screen: fades out when the app is ready (or after 8 seconds, so a slow network can't trap you). */
+function hideSplash() {
+  const splash = $('splash');
+  if (splash.classList.contains('done')) return;
+  splash.classList.add('done');
+  setTimeout(() => { splash.hidden = true; }, 400);
+}
+setTimeout(hideSplash, 8000);
 
 $('rawg-credit').hidden = !CFG.RAWG_KEY;
 
