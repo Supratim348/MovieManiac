@@ -1,5 +1,5 @@
 /* ==========================================================================
-   NEXUS — app.js
+   NEXUS — script.js
    index.html + style.css hold the structure, tabs and styling. This file:
 
      1. SETUP      – settings, Supabase client, small helpers
@@ -11,7 +11,7 @@
      7. START      – boot when a user is signed in
 
    An "item" is one title in a single shape, whatever API it came from:
-   { key, id, media, kind, title, year, rating, poster, overview }
+   { key, id, media, kind, title, year, rating, poster, backdrop, overview }
      key   "movie:603"            unique id used in the page
      media "movie" | "tv" | "game"  which API route the id belongs to
      kind  "movie" | "series" | "anime" | "game"  the label shown to the user
@@ -53,7 +53,7 @@ function toast(message) {
 const dateKey = (y, m, d) => `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
 const now = new Date();
 const prettyDate = key => new Date(key + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-const todayKey = dateKey(now.getFullYear(), now.getMonth(), now.getDate());
+const today = () => { const d = new Date(); return dateKey(d.getFullYear(), d.getMonth(), d.getDate()); };   // a function, so it stays right if the app is left open past midnight
 
 /* Posters: the real image, with a coloured gradient + title behind it.
    The gradient colour comes from the item key; if the image fails it shows through. */
@@ -303,7 +303,7 @@ async function signUp() {
 /* ==========================================================================
    4. DATA  (Supabase)
    lists = [ { id, name, items: [item, ...] } ]      watch = [ { date, item } ]
-   Row Level Security (schema.sql) makes sure each user only sees their own rows.
+   Row Level Security (see README.md for the SQL) makes sure each user only sees their own rows.
    ========================================================================== */
 
 let lists = [];
@@ -372,27 +372,48 @@ async function toggleInList(list, item) {
   refresh();
 }
 
-async function logWatch(item, date = todayKey) {
-  if (watch.some(w => w.item.key === item.key && w.date === date)) return toast('Already Logged');
+/* Jump the Stats calendar to a date and select it. */
+function showDay(date) {
+  const [y, m] = date.split('-').map(Number);
+  calendar.year = y;
+  calendar.month = m - 1;
+  calendar.selected = date;
+  renderCalendar();
+}
+
+async function logWatch(item, date = today()) {
+  if (watch.some(w => w.item.key === item.key && w.date === date)) return toast('Already logged on that day');
   const { data, error } = PREVIEW
     ? { data: { id: 'p' + Date.now() } }
     : await sb.from('watch_log').insert({ ...snapshot(item), watched_on: date }).select('id').single();
   if (error) return toast('Could not log it: ' + error.message);
   watch.push({ id: data.id, date, item });
-  const [y, m] = date.split('-').map(Number);                  // show that month in Stats, day selected
-  calendar.year = y;
-  calendar.month = m - 1;
-  calendar.selected = date;
-  renderCalendar();
+  showDay(date);
   renderWatchedButton(item);
   toast('Added');
+}
+
+/* Change the date of an existing log. Updates that entry instead of adding a second one,
+   which is what used to leave the same title on both the old and the new day. */
+async function moveWatch(id, date) {
+  const entry = watch.find(w => w.id === id);
+  if (!entry || entry.date === date) return;
+  if (watch.some(w => w.id !== id && w.item.key === entry.item.key && w.date === date)) return toast('Already logged on that day');
+  const { error } = PREVIEW ? {} : await sb.from('watch_log').update({ watched_on: date }).eq('id', id);
+  if (error) return toast('Could not change the date: ' + error.message);
+  entry.date = date;
+  showDay(date);
+  renderWatchedButton(entry.item);
+  toast('Date changed');
 }
 
 async function removeWatch(id) {
   const { error } = PREVIEW ? {} : await sb.from('watch_log').delete().eq('id', id);
   if (error) return toast('Could not remove it: ' + error.message);
+  const gone = watch.find(w => w.id === id);
   watch = watch.filter(w => w.id !== id);
   renderCalendar();
+  if (gone && detailItem && detailItem.key === gone.item.key) renderWatchedButton(detailItem);
   toast('Removed');
 }
 
@@ -601,7 +622,7 @@ const input = $('search-input');
 let searchTimer = null;
 let searchRun = 0;                                  // ignore answers that arrive after a newer search
 
-/* The category picker. Search and the "Popular" rail only use the chosen one. */
+/* The category picker: a search only looks inside the chosen category. */
 const KINDS = {
   movie: { label: 'Movies', placeholder: 'Search movies' },
   series: { label: 'Series', placeholder: 'Search TV series' },
@@ -627,43 +648,44 @@ function splitYear(text) {
   return m && m[1].trim() ? { title: m[1].trim(), year: m[2] } : { title: text, year: '' };
 }
 
-async function searchTitles(kind, text) {
-  const { title, year } = splitYear(text);
+async function lookup(kind, title, year) {
   const q = encodeURIComponent(title);
-  if (useSample) return SAMPLE.filter(i => i.kind === kind && i.title.toLowerCase().includes(title.toLowerCase()) && (!year || String(i.year) === year));
-
   if (kind === 'game') {
     if (!CFG.RAWG_KEY) throw new Error(NEEDS_RAWG);
     const dates = year ? `&dates=${year}-01-01,${year}-12-31` : '';
-    const data = await rawg(`/games?page_size=12&exclude_additions=true&search=${q}${dates}`);
-    return data.results.map(fromRawg);
+    return (await rawg(`/games?page_size=12&exclude_additions=true&search=${q}${dates}`)).results.map(fromRawg);
   }
-
   const movieQ = `/search/movie?query=${q}${year ? '&year=' + year : ''}`;
   const tvQ = `/search/tv?query=${q}${year ? '&first_air_date_year=' + year : ''}`;
   const page2 = path => path + '&page=2';
-  const find = async () => {
-    if (kind === 'movie') {
-      const [p1, p2] = await Promise.all([tmdb(movieQ), tmdb(page2(movieQ))]);
-      return [...p1.results, ...p2.results].map(r => fromTmdb(r, 'movie')).filter(i => i && i.kind === 'movie');   // anime films live under Anime
-    }
-    if (kind === 'series') {
-      const [p1, p2] = await Promise.all([tmdb(tvQ), tmdb(page2(tvQ))]);
-      return [...p1.results, ...p2.results].map(r => fromTmdb(r, 'tv')).filter(i => i && i.kind === 'series');
-    }
-    const [tv1, tv2, films] = await Promise.all([tmdb(tvQ), tmdb(page2(tvQ)), tmdb(movieQ)]);        // anime: series and films
-    return [
-      ...[...tv1.results, ...tv2.results].map(r => fromTmdb(r, 'tv')),
-      ...films.results.map(r => fromTmdb(r, 'movie')),
-    ].filter(i => i && i.kind === 'anime');
-  };
-  return find();
+  if (kind === 'movie') {
+    const [p1, p2] = await Promise.all([tmdb(movieQ), tmdb(page2(movieQ))]);
+    return [...p1.results, ...p2.results].map(r => fromTmdb(r, 'movie')).filter(i => i && i.kind === 'movie');   // anime films live under Anime
+  }
+  if (kind === 'series') {
+    const [p1, p2] = await Promise.all([tmdb(tvQ), tmdb(page2(tvQ))]);
+    return [...p1.results, ...p2.results].map(r => fromTmdb(r, 'tv')).filter(i => i && i.kind === 'series');
+  }
+  const [tv1, tv2, films] = await Promise.all([tmdb(tvQ), tmdb(page2(tvQ)), tmdb(movieQ)]);                     // anime: series and films
+  return [
+    ...[...tv1.results, ...tv2.results].map(r => fromTmdb(r, 'tv')),
+    ...films.results.map(r => fromTmdb(r, 'movie')),
+  ].filter(i => i && i.kind === 'anime');
+}
+
+async function searchTitles(kind, text) {
+  const { title, year } = splitYear(text);
+  if (useSample) return SAMPLE.filter(i => i.kind === kind && i.title.toLowerCase().includes(title.toLowerCase()) && (!year || String(i.year) === year));
+  const items = await lookup(kind, title, year);
+  // "Blade Runner 2049": the number belongs to the title, so search again with the full text.
+  return items.length || !year ? items : lookup(kind, text, '');
 }
 
 function showResultsUI(typing) {
   $('history').hidden = typing;
   $('search-clear').hidden = !typing;
   if (!typing) {
+    searchRun++;                                                // drop any search still in flight
     ['search-status', 'search-heading', 'search-empty'].forEach(id => { $(id).hidden = true; });
     $('search-results').replaceChildren();
   }
@@ -749,7 +771,7 @@ $('history-clear').addEventListener('click', () => { searchHistory = []; saveHis
 
 /* ---- Stats (calendar) ---- */
 
-const calendar = { year: now.getFullYear(), month: now.getMonth(), selected: todayKey };
+const calendar = { year: now.getFullYear(), month: now.getMonth(), selected: today() };
 
 function renderCalendar() {
   const { year, month, selected } = calendar;
@@ -766,7 +788,7 @@ function renderCalendar() {
   for (let day = 1; day <= daysInMonth; day++) {
     const key = dateKey(year, month, day);
     const first = watch.find(w => w.date === key);
-    const classes = ['day', first && 'art', key === todayKey && 'today', key === selected && 'selected'].filter(Boolean).join(' ');
+    const classes = ['day', first && 'art', key === today() && 'today', key === selected && 'selected'].filter(Boolean).join(' ');
     cells += `<button class="${classes}" data-date="${key}" ${first ? `style="${artStyle(first.item)}"` : ''} aria-label="${key}">
       ${first ? posterHTML(first.item) : ''}<span class="day-num">${day}</span></button>`;
   }
@@ -997,13 +1019,19 @@ function renderWatchedButton(item) {
   $('detail-watched').classList.toggle('done', Boolean(last));
 }
 
+let editingWatchId = null;                                      // set when the title is already logged: Save then moves that log
+
 function openWatchedSheet() {
   if (!detailItem) return;
-  const game = detailItem.kind === 'game';
-  $('watched-title').textContent = game ? 'When did you play it?' : 'When did you watch it?';
+  const verb = detailItem.kind === 'game' ? 'play' : 'watch';
+  const logs = watch.filter(w => w.item.key === detailItem.key).sort((a, b) => (a.date < b.date ? -1 : 1));
+  const last = logs[logs.length - 1];
+  editingWatchId = last ? last.id : null;
+  $('watched-title').textContent = last ? 'Change the date' : `When did you ${verb} it?`;
   $('watched-sub').textContent = detailItem.title;
-  $('watched-date').max = todayKey;                            // no dates in the future
-  $('watched-date').value = todayKey;
+  $('watched-date').max = today();                              // no dates in the future
+  $('watched-date').value = last ? last.date : today();
+  $('watched-another').hidden = !last;
   $('watched-sheet').hidden = false;
 }
 function closeWatchedSheet() { $('watched-sheet').hidden = true; }
@@ -1041,7 +1069,14 @@ $('watched-sheet').addEventListener('click', event => { if (event.target === eve
 $('watched-form').addEventListener('submit', event => {
   event.preventDefault();
   const date = $('watched-date').value;
-  if (!date || date > todayKey) return toast('Pick a date up to today');
+  if (!date || date > today()) return toast('Pick a date up to today');
+  closeWatchedSheet();
+  if (!detailItem) return;
+  if (editingWatchId) moveWatch(editingWatchId, date); else logWatch(detailItem, date);
+});
+$('watched-another').addEventListener('click', () => {            // a rewatch: keep the old log and add a new one
+  const date = $('watched-date').value;
+  if (!date || date > today()) return toast('Pick a date up to today');
   closeWatchedSheet();
   if (detailItem) logWatch(detailItem, date);
 });
@@ -1103,7 +1138,7 @@ function showSignIn() {
   $('tab-home').checked = true;
   input.value = '';
   showResultsUI(false);
-  Object.assign(calendar, { year: now.getFullYear(), month: now.getMonth(), selected: todayKey });
+  Object.assign(calendar, { year: now.getFullYear(), month: now.getMonth(), selected: today() });
   $('auth-password').value = '';
   authMessage('');
   /* The item lookup (cache) is NOT cleared: the Home rails keep their titles between
